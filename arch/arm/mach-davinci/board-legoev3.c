@@ -61,6 +61,14 @@
 #define DA850_BT_EN			GPIO_TO_PIN(0, 15)
 
 #ifdef CONFIG_MACH_DAVINCI_LEGOEV3
+
+#define EV3_BUTTON_0_PIN                GPIO_TO_PIN(7, 15)
+#define EV3_BUTTON_1_PIN                GPIO_TO_PIN(1, 13)
+#define EV3_BUTTON_2_PIN                GPIO_TO_PIN(7, 14)
+#define EV3_BUTTON_3_PIN                GPIO_TO_PIN(7, 12)
+#define EV3_BUTTON_4_PIN                GPIO_TO_PIN(6, 6 )
+#define EV3_BUTTON_5_PIN                GPIO_TO_PIN(6, 10)
+
 #else
 #warning "Delete this code and eliminate this warning after copying this file to board-legoev3.c"
 #define DAVINCI_BACKLIGHT_MAX_BRIGHTNESS	250
@@ -2013,12 +2021,47 @@ static const short da850_lms2012_lcd_pins[] = {
 
 static const short legoev3_ui_pins[] = {
         EV3_DIODE_0, EV3_DIODE_1, EV3_DIODE_2, EV3_DIODE_3,
-
-        EV3_BUTTON_0, EV3_BUTTON_1, EV3_BUTTON_2,
-        EV3_BUTTON_3, EV3_BUTTON_4, EV3_BUTTON_5,
-
+#if !(defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE))
+	EV3_BUTTON_0, EV3_BUTTON_1, EV3_BUTTON_2,
+	EV3_BUTTON_3, EV3_BUTTON_4, EV3_BUTTON_5,
+#endif
 	-1
 };
+
+#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE)
+#include <linux/gpio_keys.h>
+#include<linux/input.h>
+static struct gpio_keys_button ev3_gpio_keys_table[] = {
+	{KEY_UP,    EV3_BUTTON_0_PIN, 1, "gpio-keys: UP",    EV_KEY, 0, 20, 1},
+	{KEY_ENTER, EV3_BUTTON_1_PIN, 1, "gpio-keys: ENTER", EV_KEY, 0, 20, 1},
+	{KEY_DOWN,  EV3_BUTTON_2_PIN, 1, "gpio-keys: DOWN",  EV_KEY, 0, 20, 1},
+	{KEY_RIGHT, EV3_BUTTON_3_PIN, 1, "gpio-keys: RIGHT", EV_KEY, 0, 20, 1},
+	{KEY_LEFT,  EV3_BUTTON_4_PIN, 1, "gpio-keys: LEFT",  EV_KEY, 0, 20, 1},
+	{KEY_ESC,   EV3_BUTTON_5_PIN, 1, "gpio-keys: ESC",   EV_KEY, 0, 20, 1},
+};
+
+static struct gpio_keys_platform_data ev3_gpio_keys_data = {
+	.buttons = ev3_gpio_keys_table,
+	.nbuttons = ARRAY_SIZE(ev3_gpio_keys_table),
+};
+
+static struct platform_device ev3_device_gpiokeys = {
+	.name = "gpio-keys",
+	.dev = {
+		.platform_data = &ev3_gpio_keys_data,
+	},
+};
+
+static const int legoev3_button_gpio[] = {
+	EV3_BUTTON_0_PIN,
+	EV3_BUTTON_1_PIN,
+	EV3_BUTTON_2_PIN,
+	EV3_BUTTON_3_PIN,
+	EV3_BUTTON_4_PIN,
+	EV3_BUTTON_5_PIN
+};
+#endif
+
 #endif
 
 static __init int da850_set_emif_clk_rate(void)
@@ -2085,6 +2128,24 @@ static __init void da850_legoev3_init(void)
 	if (ret)
 		pr_warning("da850_evm_init: edma registration failed: %d\n",
 				ret);
+
+#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE)
+
+	/* This is CRITICAL code to making the LEFT button work - it disables
+	 * the internal pullup on pin group 25 which is where the GPIO6_6 lives.
+	 */
+	ret = __raw_readl(DA8XX_SYSCFG1_VIRT(DA8XX_PUPD_SEL_REG));
+	ret &= 0xFDFFFFFF;
+	__raw_writel(ret, DA8XX_SYSCFG1_VIRT(DA8XX_PUPD_SEL_REG));
+
+	gpio_request_array(legoev3_button_gpio, ARRAY_SIZE(legoev3_button_gpio));
+	gpio_free_array(legoev3_button_gpio, ARRAY_SIZE(legoev3_button_gpio));
+
+	ret = platform_device_register(&ev3_device_gpiokeys);
+	if (ret)
+		pr_warning("da850_evm_init: button registration failed: %d\n",
+				ret);
+#endif
 
 #ifdef CONFIG_MACH_DAVINCI_LEGOEV3
 #warning "Eventually, we'll re-enable these pins!"
