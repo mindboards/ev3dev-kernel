@@ -90,7 +90,7 @@ static ssize_t gpio_trig_brightness_store(struct device *dev,
 
 	return n;
 }
-static DEVICE_ATTR(desired_brightness, 0644, gpio_trig_brightness_show,
+static DEVICE_ATTR(desired_brightness, 0666, gpio_trig_brightness_show,
 		gpio_trig_brightness_store);
 
 static ssize_t gpio_trig_inverted_show(struct device *dev,
@@ -124,7 +124,7 @@ static ssize_t gpio_trig_inverted_store(struct device *dev,
 
 	return n;
 }
-static DEVICE_ATTR(inverted, 0644, gpio_trig_inverted_show,
+static DEVICE_ATTR(inverted, 0666, gpio_trig_inverted_show,
 		gpio_trig_inverted_store);
 
 static ssize_t gpio_trig_gpio_show(struct device *dev,
@@ -174,7 +174,7 @@ static ssize_t gpio_trig_gpio_store(struct device *dev,
 
 	return ret ? ret : n;
 }
-static DEVICE_ATTR(gpio, 0644, gpio_trig_gpio_show, gpio_trig_gpio_store);
+static DEVICE_ATTR(gpio, 0666, gpio_trig_gpio_show, gpio_trig_gpio_store);
 
 static void gpio_trig_activate(struct led_classdev *led)
 {
