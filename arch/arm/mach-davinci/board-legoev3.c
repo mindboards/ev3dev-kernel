@@ -2138,9 +2138,6 @@ static __init void da850_legoev3_init(void)
 	ret &= 0xFDFFFFFF;
 	__raw_writel(ret, DA8XX_SYSCFG1_VIRT(DA8XX_PUPD_SEL_REG));
 
-	gpio_request_array(legoev3_button_gpio, ARRAY_SIZE(legoev3_button_gpio));
-	gpio_free_array(legoev3_button_gpio, ARRAY_SIZE(legoev3_button_gpio));
-
 	ret = platform_device_register(&ev3_device_gpiokeys);
 	if (ret)
 		pr_warning("da850_evm_init: button registration failed: %d\n",
