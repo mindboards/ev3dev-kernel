@@ -2129,15 +2129,15 @@ static __init void da850_legoev3_init(void)
 		pr_warning("da850_evm_init: edma registration failed: %d\n",
 				ret);
 
-#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE)
-
-	/* This is CRITICAL code to making the LEFT button work - it disables
+	/*
+	 * This is CRITICAL code to making the LEFT button work - it disables
 	 * the internal pullup on pin group 25 which is where the GPIO6_6 lives.
 	 */
 	ret = __raw_readl(DA8XX_SYSCFG1_VIRT(DA8XX_PUPD_SEL_REG));
 	ret &= 0xFDFFFFFF;
 	__raw_writel(ret, DA8XX_SYSCFG1_VIRT(DA8XX_PUPD_SEL_REG));
 
+#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE)
 	ret = platform_device_register(&ev3_device_gpiokeys);
 	if (ret)
 		pr_warning("da850_evm_init: button registration failed: %d\n",
