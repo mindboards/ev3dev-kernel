@@ -2021,10 +2021,8 @@ static const short da850_lms2012_lcd_pins[] = {
 
 static const short legoev3_ui_pins[] = {
         EV3_DIODE_0, EV3_DIODE_1, EV3_DIODE_2, EV3_DIODE_3,
-#if !(defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE))
 	EV3_BUTTON_0, EV3_BUTTON_1, EV3_BUTTON_2,
 	EV3_BUTTON_3, EV3_BUTTON_4, EV3_BUTTON_5,
-#endif
 	-1
 };
 
