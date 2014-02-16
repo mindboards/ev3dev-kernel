@@ -18,18 +18,18 @@
 #include <linux/slab.h>
 #include <linux/legoev3/legoev3_ports.h>
 #include <linux/legoev3/ev3_input_port.h>
-#include <linux/legoev3/touch_sensor_class.h>
+#include <linux/legoev3/switch_sensor_class.h>
 
 #include <asm/bug.h>
 
 #define PIN6_NEAR_GND		250		/* 0.25V */
 
 struct ev3_touch_sensor_data {
-	struct touch_sensor_device ts;
+	struct switch_sensor_device ts;
 	struct legoev3_port_device *in_port;
 };
 
-static bool ev3_touch_sensor_pressed(struct touch_sensor_device *ts)
+static bool ev3_touch_sensor_pressed(struct switch_sensor_device *ts)
 {
 	struct ev3_touch_sensor_data *ev3_ts =
 			container_of(ts, struct ev3_touch_sensor_data, ts);
@@ -50,10 +50,10 @@ static int __devinit ev3_touch_sensor_probe(struct legoev3_port_device *sensor)
 	if (!ev3_ts)
 		return -ENOMEM;
 
-	ev3_ts->ts.pressed = ev3_touch_sensor_pressed;
+	ev3_ts->ts.get_value = ev3_touch_sensor_pressed;
 	ev3_ts->in_port = pdata->in_port;
 
-	err = register_touch_sensor(&ev3_ts->ts, &sensor->dev);
+	err = register_switch_sensor(&ev3_ts->ts, &sensor->dev);
 	if (err)
 		goto register_touch_sensor_fail;
 
@@ -67,7 +67,7 @@ static int __devinit ev3_touch_sensor_probe(struct legoev3_port_device *sensor)
 	return 0;
 
 dev_set_drvdata_fail:
-	unregister_touch_sensor(&ev3_ts->ts);
+	unregister_switch_sensor(&ev3_ts->ts);
 register_touch_sensor_fail:
 	kfree(ev3_ts);
 
@@ -80,11 +80,16 @@ static int __devexit ev3_touch_sensor_remove(struct legoev3_port_device *sensor)
 
 	dev_info(&sensor->dev, "EV3 Touch sensor removed from port %s\n",
 		 dev_name(&ev3_ts->in_port->dev));
-	unregister_touch_sensor(&ev3_ts->ts);
+	unregister_switch_sensor(&ev3_ts->ts);
 	dev_set_drvdata(&sensor->dev, NULL);
 	kfree(ev3_ts);
 	return 0;
 }
+
+static const struct legoev3_port_device_id ev3_touch_sensor_ids[] = {
+	LEGOEV3_PORT_DEVICE_ID("ev3-analog-sensor", 2),
+	{ }
+};
 
 struct legoev3_port_driver ev3_touch_sensor_driver = {
 	.probe	= ev3_touch_sensor_probe,
@@ -93,11 +98,11 @@ struct legoev3_port_driver ev3_touch_sensor_driver = {
 		.name	= "ev3-touch-sensor",
 		.owner	= THIS_MODULE,
 	},
+	.id_table = ev3_touch_sensor_ids,
 };
-EXPORT_SYMBOL_GPL(ev3_touch_sensor_driver);
 legoev3_port_driver(ev3_touch_sensor_driver);
 
 MODULE_DESCRIPTION("EV3 touch sensor device driver for LEGO Mindstorms EV3");
 MODULE_AUTHOR("David Lechner <david@lechnology.com>");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("legoev3:ev3-touch-sensor");
+MODULE_ALIAS("legoev3:ev3-analog-sensor");
