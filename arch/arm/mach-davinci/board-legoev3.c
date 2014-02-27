@@ -104,23 +104,23 @@ static const short legoev3_led_pins[] __initconst = {
 
 static struct gpio_led ev3_gpio_leds[] = {
 	{
-		.name = "ev3:red:right",
-		.default_trigger = "mmc0",
-		.gpio = EV3_LED_0_PIN,
-	},
-	{
-		.name = "ev3:green:right",
-		.default_trigger = "mmc0",
-		.gpio = EV3_LED_1_PIN,
-	},
-	{
 		.name = "ev3:red:left",
 		.default_trigger = "heartbeat",
-		.gpio = EV3_LED_2_PIN,
+		.gpio = EV3_LED_0_PIN,
 	},
 	{
 		.name = "ev3:green:left",
 		.default_trigger = "heartbeat",
+		.gpio = EV3_LED_1_PIN,
+	},
+	{
+		.name = "ev3:green:right",
+		.default_trigger = "mmc0",
+		.gpio = EV3_LED_2_PIN,
+	},
+	{
+		.name = "ev3:red:right",
+		.default_trigger = "mmc0",
 		.gpio = EV3_LED_3_PIN,
 	},
 };
@@ -200,6 +200,11 @@ static struct platform_device da850_pm_device = {
 /*
  * EV3 USB configuration:
  * ======================
+ * usb1/USB1 is the USB 1.1 host port.
+ * usb20 is the USB 2.0 OTG (On-The-Go) port.
+ *
+ * The over-current GPIO (EV3_USB1_OVC) is actually over-current for the
+ * entire brick, not just the USB port.
  */
 
 static const short legoev3_usb1_pins[] __initconst = {
@@ -278,19 +283,19 @@ static __init void legoev3_usb_init(void)
  */
 
 static const short legoev3_bt_pins[] __initconst = {
-	EV3_BT_ENA, EV3_BT_ENA2, EV3_BT_PIC_ENA, EV3_BT_PIC_RST, EV3_BT_PIC_CTS,
-	EV3_BT_CLK, EV3_BT_UART_CTS, EV3_BT_UART_RTS, EV3_BT_UART_RXD,
-	EV3_BT_UART_TXD,
+	EV3_BT_ENA, EV3_BT_CLK_ENA, EV3_BT_PIC_ENA, EV3_BT_PIC_RST,
+	EV3_BT_PIC_CTS, EV3_BT_CLK, EV3_BT_UART_CTS, EV3_BT_UART_RTS,
+	EV3_BT_UART_RXD, EV3_BT_UART_TXD,
 	-1
 };
 
 static struct legoev3_bluetooth_platform_data legoev3_bt_pdata = {
-	.bt_ena_gpio	= EV3_BT_ENA_PIN,
-	.bt_ena2_gpio	= EV3_BT_ENA2_PIN,
-	.pic_ena_gpio	= EV3_BT_PIC_ENA_PIN,
-	.pic_rst_gpio	= EV3_BT_PIC_RST_PIN,
-	.pic_cts_gpio	= EV3_BT_PIC_CTS_PIN,
-	.clk_pwm_dev	= "ecap.2",
+	.bt_ena_gpio		= EV3_BT_ENA_PIN,
+	.bt_clk_ena_gpio	= EV3_BT_CLK_ENA_PIN,
+	.pic_ena_gpio		= EV3_BT_PIC_ENA_PIN,
+	.pic_rst_gpio		= EV3_BT_PIC_RST_PIN,
+	.pic_cts_gpio		= EV3_BT_PIC_CTS_PIN,
+	.clk_pwm_dev		= "ecap.2",
 };
 
 static struct platform_device legoev3_bt_device = {
@@ -304,30 +309,23 @@ static struct platform_device legoev3_bt_device = {
 /*
  * SD card reader configuration:
  * =============================
- * LEGO did not hook up the write protect pin? And does not use card detect?
+ * MicroSD does not have write protect.
  */
 
 static const short legoev3_sd_pins[] __initconst = {
 	EV3_SD_DAT_0, EV3_SD_DAT_1, EV3_SD_DAT_2,
-	EV3_SD_DAT_3, EV3_SD_CLK, EV3_SD_CMD,
+	EV3_SD_DAT_3, EV3_SD_CLK, EV3_SD_CMD, EV3_SD_CD,
 	-1
 };
-/*
-static int legoev3_mmc_get_ro(int index)
-{
-	return gpio_get_value(EV3_SD_WP_PIN);
-}
 
 static int legoev3_mmc_get_cd(int index)
 {
 	return !gpio_get_value(EV3_SD_CD_PIN);
 }
-*/
+
 static struct davinci_mmc_config legoev3_sd_config = {
-/*
-	.get_ro		= legoev3_mmc_get_ro,
+
 	.get_cd		= legoev3_mmc_get_cd,
-*/
 	.wires		= 4,
 	.max_freq	= 50000000,
 	.caps		= MMC_CAP_MMC_HIGHSPEED | MMC_CAP_SD_HIGHSPEED,
@@ -368,8 +366,6 @@ static __init int legoev3_init_cpufreq(void) { return 0; }
  * Devices are:
  * - EEPROM (24c128) to get the hardware version and the bluetooth MAC
  *	address for the EV3.
- * - The bluetooth module (PIC_*) for lms2012 Mode 2 communications,
- *	whatever that is (see c_i2c.c in lms2012).
  */
 
 static const short legoev3_i2c_board_pins[] __initconst = {
@@ -380,18 +376,6 @@ static const short legoev3_i2c_board_pins[] __initconst = {
 static struct i2c_board_info __initdata legoev3_i2c_board_devices[] = {
 	{
 		I2C_BOARD_INFO("24c128", 0x50),
-	},
-	{
-		I2C_BOARD_INFO("PIC_CodedDataTo", 0x54),
-	},
-	{
-		I2C_BOARD_INFO("PIC_ReadStatus", 0x55),
-	},
-	{
-		I2C_BOARD_INFO("PIC_RawDataTo", 0x56),
-	},
-	{
-		I2C_BOARD_INFO("PIC_ReadDataFrom", 0x57),
 	},
 };
 
@@ -406,36 +390,28 @@ static struct davinci_i2c_platform_data legoev3_i2c_board_pdata = {
  * UART0 is used for Input Port 1. It is also the debug terminal.
  * UART1 is used for Input Port 2.
  * UART2 is used to communicate to the bluetooth chip.
- * Input Ports 3 and 4 get software UARTs via the PRU.
+ * PRU_SUART1 is used for Input Port 4.
+ * PRU_SUART2 is used for Input Port 3.
+ *
+ * Pin muxes are defined in the I/O port and bluetooth sections.
  */
 
 static struct davinci_uart_config legoev3_uart_config = {
 	.enabled_uarts = 0x7,
 };
 
-#warning "Fix up the pru_suart code here so it works"
-static int __init da850_evm_config_pru_suart(void)
-{
-	int ret;
+/*
+ * The actual PRU Soft-UART board configuration is in the following files:
+ * drivers/tty/serial/omapl_uart/pru/hal/uart/include/omapl_suart_board.h
+ * drivers/tty/serial/omapl_uart/pru/hal/uart/include/suart_api.h
+ */
 
-	pr_info("da850_evm_config_pru_suart configuration\n");
-	if (!machine_is_davinci_da850_evm())
-		return 0;
+/*
+ * EV3 EDMA configuration:
+ * =======================
+ */
 
-// FIXME: Add pru suart setup
-//    ret = da8xx_pinmux_setup(da850_pru_suart_pins);
-//    if (ret)
-//        pr_warning("legoev3_init: da850_pru_suart_pins mux setup failed: %d\n",
-//                ret);
-//
-//    ret = da8xx_register_pru_suart();
-//    if (ret)
-//        pr_warning("legoev3_init: pru suart registration failed: %d\n", ret);
-      return ret;
-}
-device_initcall(da850_evm_config_pru_suart);
-
-#warning "Are these EDMA initializers really needed?"
+#warning "Are these EDMA initializers really needed? Yes, but needs review."
 /*
  * The following EDMA channels/slots are not being used by drivers (for
  * example: Timer, GPIO, UART events etc) on da850/omap-l138 EVM, hence
@@ -558,11 +534,10 @@ static struct spi_board_info legoev3_spi0_board_info[] = {
 
 static const short legoev3_in_out_pins[] __initconst = {
 	EV3_IN1_PIN1, EV3_IN1_PIN2, EV3_IN1_PIN5, EV3_IN1_PIN6, EV3_IN1_BUF_ENA,
-	EV3_IN1_UART_TXD, EV3_IN1_UART_RXD,
 	EV3_IN2_PIN1, EV3_IN2_PIN2, EV3_IN2_PIN5, EV3_IN2_PIN6, EV3_IN2_BUF_ENA,
-	EV3_IN2_UART_TXD, EV3_IN2_UART_RXD,
 	EV3_IN3_PIN1, EV3_IN3_PIN2, EV3_IN3_PIN5, EV3_IN3_PIN6, EV3_IN3_BUF_ENA,
 	EV3_IN4_PIN1, EV3_IN4_PIN2, EV3_IN4_PIN5, EV3_IN4_PIN6, EV3_IN4_BUF_ENA,
+	EV3_IN1_UART_RXD, EV3_IN2_UART_RXD, EV3_IN3_UART_RXD, EV3_IN4_UART_RXD,
 	EV3_OUT1_PIN1, EV3_OUT1_PIN2, EV3_OUT1_PIN5, EV3_OUT1_PIN6,
 	EV3_OUT2_PIN1, EV3_OUT2_PIN2, EV3_OUT2_PIN5, EV3_OUT2_PIN6,
 	EV3_OUT3_PIN1, EV3_OUT3_PIN2, EV3_OUT3_PIN5, EV3_OUT3_PIN6,
@@ -584,6 +559,7 @@ static struct legoev3_ports_platform_data legoev3_ports_data = {
 			.i2c_dev_id		= 3,
 			.i2c_pin_mux		= EV3_IN1_I2C_CLK,
 			.uart_pin_mux		= EV3_IN1_UART_TXD,
+			.uart_tty		= "ttyS1",
 		},
 		{
 			.id			= EV3_PORT_IN2,
@@ -596,6 +572,7 @@ static struct legoev3_ports_platform_data legoev3_ports_data = {
 			.i2c_dev_id		= 4,
 			.i2c_pin_mux		= EV3_IN2_I2C_CLK,
 			.uart_pin_mux		= EV3_IN2_UART_TXD,
+			.uart_tty		= "ttyS0",
 		},
 		{
 			.id			= EV3_PORT_IN3,
@@ -608,6 +585,7 @@ static struct legoev3_ports_platform_data legoev3_ports_data = {
 			.i2c_dev_id		= 5,
 			.i2c_pin_mux		= EV3_IN3_I2C_CLK,
 			.uart_pin_mux		= EV3_IN3_UART_TXD,
+			.uart_tty		= "ttySU1",
 		},
 		{
 			.id			= EV3_PORT_IN4,
@@ -620,6 +598,7 @@ static struct legoev3_ports_platform_data legoev3_ports_data = {
 			.i2c_dev_id		= 6,
 			.i2c_pin_mux		= EV3_IN4_I2C_CLK,
 			.uart_pin_mux		= EV3_IN4_UART_TXD,
+			.uart_tty		= "ttySU0",
 		},
 	},
 	.output_port_data = {
@@ -973,6 +952,11 @@ static __init void legoev3_init(void)
 		pr_warning("legoev3_init: mmcsd0 mux setup failed:"
 				" %d\n", ret);
 #if defined(CONFIG_MMC_DAVINCI) || defined(CONFIG_MMC_DAVINCI_MODULE)
+	ret = gpio_request(EV3_SD_CD_PIN, "SD Card CD\n");
+	if (ret)
+		pr_warning("legoev3_init: can not open GPIO %d\n", EV3_SD_CD_PIN);
+	gpio_direction_input(EV3_SD_CD_PIN);
+
 	ret = da8xx_register_mmcsd0(&legoev3_sd_config);
 	if (ret)
 		pr_warning("legoev3_init: mmcsd0 registration failed:"
@@ -1021,6 +1005,10 @@ static __init void legoev3_init(void)
 
 	/* UART support - used by input ports and bluetooth */
 	davinci_serial_init(&legoev3_uart_config);
+
+	ret = da8xx_register_pru_suart();
+	if (ret)
+		pr_warning("legoev3_init: pru suart registration failed: %d\n", ret);
 }
 
 #ifdef CONFIG_SERIAL_8250_CONSOLE
