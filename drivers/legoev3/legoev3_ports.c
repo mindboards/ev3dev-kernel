@@ -49,10 +49,24 @@ struct legoev3_ports_data {
 
 static struct legoev3_ports_data *legoev3_ports;
 
+static uint disable_in_port[NUM_EV3_PORT_IN];
+static int num_disabled_in_port;
+module_param_array(disable_in_port, uint, &num_disabled_in_port, 0);
+MODULE_PARM_DESC(disable_in_port, "Disables specified input ports. (1,2,3,4)");
+static uint disable_out_port[NUM_EV3_PORT_OUT];
+static int num_disabled_out_port;
+module_param_array(disable_out_port, uint, &num_disabled_out_port, 0);
+MODULE_PARM_DESC(disable_out_port, "Disables specified output ports. (1,2,3,4)");
+
 static ssize_t legoev3_show_device_type(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
 {
+	struct legoev3_port_device *pdev = to_legoev3_port_device(dev);
+
+	if (pdev->type_id >= 0)
+		return sprintf(buf, "%s:%d\n", dev->type->name, pdev->type_id);
+
 	return sprintf(buf, "%s\n", dev->type->name);
 }
 
@@ -110,13 +124,16 @@ static void legoev3_port_device_release (struct device *dev)
 /**
  * legoev3_port_device_register - Register a new device on the legoev3 port bus.
  * @name: The name of the device.
- * @id: The id of the device or -1 if there is only one device with this name.
+ * @id: The sysfs node id of the device or -1 if there is only one device with
+ *	this name.
  * @type: The type of device (required).
+ * @type_id: The EV3 sensor type or -1 for non-EV3 sensors.
  * @platform_data: Device specific data that depends on the device type.
  * @parent: The parent device.
  */
 struct legoev3_port_device
-*legoev3_port_device_register(const char *name, int id, struct device_type *type,
+*legoev3_port_device_register(const char *name, int id,
+			      struct device_type *type, int type_id,
 			      void *platform_data, size_t platform_data_size,
 			      struct device *parent)
 {
@@ -135,6 +152,7 @@ struct legoev3_port_device
 
 	strncpy(pdev->name, name, LEGOEV3_PORT_NAME_SIZE);
 	pdev->id = id;
+	pdev->type_id = type_id;
 	device_initialize(&pdev->dev);
 	pdev->dev.type = type;
 	pdev->dev.bus = &legoev3_bus_type;
@@ -250,7 +268,20 @@ EXPORT_SYMBOL_GPL(legoev3_unregister_port_driver);
 
 static int legoev3_bus_match(struct device *dev, struct device_driver *drv)
 {
-	return !strcmp(dev->type->name, drv->name);
+	struct legoev3_port_device *pdev = to_legoev3_port_device(dev);
+	struct legoev3_port_driver *pdrv = to_legoev3_port_driver(drv);
+	const struct legoev3_port_device_id *id = pdrv->id_table;
+
+	if (pdev->type_id < 0 && !strcmp(dev->type->name, drv->name))
+		return 1;
+
+	while (id->name && id->name[0]) {
+		if (pdev->type_id == id->type_id && !strcmp(dev->type->name, id->name))
+			return 1;
+		id++;
+	}
+
+	return 0;
 }
 
 static int legoev3_bus_uevent(struct device *dev, struct kobj_uevent_env *env)
@@ -288,12 +319,26 @@ int legoev3_register_input_ports(struct legoev3_port_device *ports[],
 				 struct ev3_input_port_platform_data data[],
 				 unsigned len)
 {
-	int err;
+	int err, j, id;
 	int i = 0;
+	bool skip;
 
 	do {
-		ports[i] = legoev3_port_device_register("in", data[i].id + 1,
-			&ev3_input_port_device_type, &data[i],
+		skip = false;
+		id = data[i].id + 1;
+		for (j = 0; j < num_disabled_in_port; j++) {
+			if (disable_in_port[j] == id) {
+				skip = true;
+				break;
+			}
+		}
+		if (skip) {
+			dev_info(&legoev3_ports->pdev->dev,
+				"Input port in%d is disabled.\n", id);
+			continue;
+		}
+		ports[i] = legoev3_port_device_register("in", id,
+			&ev3_input_port_device_type, -1, &data[i],
 			sizeof(struct ev3_input_port_platform_data), NULL);
 		if (IS_ERR(ports[i])) {
 			err = PTR_ERR(ports[i]);
@@ -319,7 +364,7 @@ int legoev3_register_output_ports(struct legoev3_port_device *ports[],
 
 	do {
 		ports[i] = legoev3_port_device_register("out", data[i].id + 1,
-			&ev3_output_port_device_type, &data[i],
+			&ev3_output_port_device_type, -1, &data[i],
 			sizeof(struct ev3_output_port_platform_data), NULL);
 		if (IS_ERR(ports[i])) {
 			err = PTR_ERR(ports[i]);
@@ -377,8 +422,6 @@ static int __devinit legoev3_ports_probe(struct platform_device *pdev)
 	}
 
 	return 0;
-
-err_pwm_request_byname:
 
 err_legoev3_register_output_ports:
 	for(i = 0; i < NUM_EV3_PORT_IN; i++)

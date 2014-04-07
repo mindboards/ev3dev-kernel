@@ -29,10 +29,10 @@ enum legoev3_pin_map {
 	GPIO_PIN(LCD_CS, 2, 12)
 
 	/* LED pins */
-	GPIO_PIN(LED_0, 6, 12)
-	GPIO_PIN(LED_1, 6, 14)
-	GPIO_PIN(LED_2, 6, 13)
-	GPIO_PIN(LED_3, 6, 7)
+	GPIO_PIN(LED_0, 6, 13)
+	GPIO_PIN(LED_1, 6, 7)
+	GPIO_PIN(LED_2, 6, 14)
+	GPIO_PIN(LED_3, 6, 12)
 
 	/* Button pins */
 	GPIO_PIN(BUTTON_0, 7, 15)
@@ -50,14 +50,15 @@ enum legoev3_pin_map {
 	GPIO_PIN(SYS_POWER_ENA, 6, 5)
 	GPIO_PIN(SYS_5V_POWER, 6, 11)
 	GPIO_PIN(BATT_TYPE, 8, 8)
+	GPIO_PIN(BATT_ADC, 0, 6)
 
 	/* I2C board pins */
 	PIN(I2C_BOARD_SDA, I2C0_SDA)
 	PIN(I2C_BOARD_SCL, I2C0_SCL)
 
 	/* Bluetooth pins */
-	GPIO_PIN(BT_ENA, 4, 1)
-	GPIO_PIN(BT_ENA2, 4, 9)
+	GPIO_PIN(BT_ENA, 4, 9)
+	GPIO_PIN(BT_CLK_ENA, 0, 5)
 	GPIO_PIN(BT_PIC_ENA, 3, 3)
 	GPIO_PIN(BT_PIC_RST, 4, 14)
 	GPIO_PIN(BT_PIC_CTS, 5, 7)
@@ -72,7 +73,6 @@ enum legoev3_pin_map {
 	PIN(ADC_DATA_OUT, SPI0_SOMI)
 	PIN(ADC_CS, SPI0_SCS_3)
 	PIN(ADC_CLK, SPI0_CLK)
-	GPIO_PIN(ADC_ENA, 0, 6)
 
 	/* USB1 VBUS pins */
 	GPIO_PIN(USB1_OVC, 6, 3)
@@ -84,6 +84,7 @@ enum legoev3_pin_map {
 	PIN(SD_DAT_3, MMCSD0_DAT_3)
 	PIN(SD_CLK, MMCSD0_CLK)
 	PIN(SD_CMD, MMCSD0_CMD)
+	GPIO_PIN(SD_CD, 5, 14)
 
 	/* Input and output port pins */
 	GPIO_PIN(IN1_PIN1, 8, 10)
@@ -109,6 +110,7 @@ enum legoev3_pin_map {
 	GPIO_PIN(IN3_BUF_ENA, 7, 9)
 	GPIO_PIN(IN3_I2C_CLK, 1, 12) /* physical pin is shared with IN3_UART */
 	PIN(IN3_UART_TXD, AXR_4) /* physical pin is shared with IN3_I2C_CLK */
+	PIN(IN3_UART_RXD, AXR_2)
 	GPIO_PIN(IN4_PIN1, 6, 4)
 	GPIO_PIN(IN4_PIN2, 7, 8)
 	GPIO_PIN(IN4_PIN5, 0, 1)
@@ -116,6 +118,7 @@ enum legoev3_pin_map {
 	GPIO_PIN(IN4_BUF_ENA, 7, 10)
 	GPIO_PIN(IN4_I2C_CLK, 1, 11) /* physical pin is shared with IN4_UART */
 	PIN(IN4_UART_TXD, AXR_3) /* physical pin is shared with IN4_I2C_CLK */
+	PIN(IN4_UART_RXD, AXR_1)
 	GPIO_PIN(OUT1_PIN1, 3, 15)
 	GPIO_PIN(OUT1_PIN2, 3, 6)
 	GPIO_PIN(OUT1_PIN5, 5, 4)

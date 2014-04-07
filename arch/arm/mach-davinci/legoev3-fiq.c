@@ -96,6 +96,8 @@ struct legoev3_fiq_ehrpwm_data {
 	void *period_elapsed_data;
 	unsigned requested_flag:1;
 	unsigned period_elapsed_flag:1;
+	int ramp_step;
+	int ramp_value;
 };
 
 struct legoev3_fiq_data {
@@ -326,7 +328,7 @@ legoev3_fiq_timer_callback(struct legoev3_fiq_port_i2c_data *data)
 		 * Note: The official LEGO firmware does not generate stop
 		 * condition except for in the middle of reads (see below).
 		 * We are going by the book and doing a stop when we are
-		 * suppoed to. We can change it back if there are problems.
+		 * supposed to. We can change it back if there are problems.
 		 */
 		fiq_gpio_dir_out(&data->gpio[FIQ_I2C_PIN_SDA], 0);
 
@@ -398,6 +400,28 @@ static void legoev3_fiq_ehrpwm_callback(struct legoev3_fiq_ehrpwm_data *data)
 
 	if (unlikely(!data->requested_flag || !data->dma_area))
 		return;
+
+	if (unlikely(data->ramp_step))
+	{
+		duty_ticks = (data->ramp_value * data->period_ticks) >> 16;
+		if (duty_ticks==0)
+			duty_ticks = 1;
+		fiq_ehrpwm_set_duty_ticks(duty_ticks);
+
+		data->ramp_value += data->ramp_step;
+		if (data->ramp_value >= 0x8000)
+		{ // end of ramp up
+			data->ramp_step = 0;
+		}
+		else if (data->ramp_value < 0)
+		{ // end of ramp down
+			/* do not reset ramp_step here so that we stay at 1 until PWM is 
+			   turned off or playback is started again */
+			data->ramp_value = 1;
+		}
+
+		return;
+	}
 
 	sample = *(short *)(data->dma_area + data->playback_ptr);
 	sample = (sample * data->volume) >> 8;
@@ -496,7 +520,7 @@ static irqreturn_t legoev3_fiq_gpio_irq_i2c_port_callback(int irq, void *port_da
  * @scl_pin: The GPIO pin to use for the I2C clock line. Same notes apply
  *	as on the sda_pin.
  *
- * Returns 0 if the port is availible or -EBUSY if it has already be requested.
+ * Returns 0 if the port is available or -EBUSY if it has already be requested.
  */
 int legoev3_fiq_request_port(enum ev3_input_port_id port_id, int sda_pin,
 			     int scl_pin)
@@ -551,7 +575,7 @@ EXPORT_SYMBOL_GPL(legoev3_fiq_release_port);
 
 /**
  * legoev3_fiq_start_xfer- Start an I2C transfer on the specified port.
- * @port_id: The port identifer that was previously requested.
+ * @port_id: The port identifier that was previously requested.
  * @msgs: The message data to transfer.
  * @num_msg: Number of messages in msgs[].
  * @complete: Function to call when transfer is complete.
@@ -614,7 +638,7 @@ legoev3_fiq_gpio_irq_period_elapsed_callback(int irq, void *ehrpwm_data)
 	return IRQ_HANDLED;
 }
 
-int legoev3_fiq_ehrpwm_request(struct snd_pcm_substream *substream)
+int legoev3_fiq_ehrpwm_request(void)
 {
 	int err;
 
@@ -644,9 +668,27 @@ EXPORT_SYMBOL_GPL(legoev3_fiq_ehrpwm_request);
 
 void legoev3_fiq_ehrpwm_release(void)
 {
+	int i;
 	if (!legoev3_fiq_data)
 		return;
 
+	if ((legoev3_fiq_data->ehrpwm_data.ramp_step < 0) &&
+	    (legoev3_fiq_data->ehrpwm_data.ramp_value > 0))
+	{
+		/*
+		 * we are still in the process of ramping down,
+		 * wait for completition 
+		 */
+		for (i=0; i<5; ++i)
+		{
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule_timeout(10 * HZ / 1000);
+			
+			if (legoev3_fiq_data->ehrpwm_data.ramp_value <= 0)
+				break;
+		}
+	}
+	
 	local_fiq_disable();
 	free_irq(legoev3_fiq_data->status_gpio_irq,
 		 &legoev3_fiq_data->ehrpwm_data);
@@ -661,7 +703,6 @@ int legoev3_fiq_ehrpwm_prepare(struct snd_pcm_substream *substream,
 			       void (*period_elapsed)(void *), void *context)
 {
 	struct legoev3_fiq_ehrpwm_data *data;
-	int err;
 
 	if (!legoev3_fiq_data)
 		return -ENODEV;
@@ -681,6 +722,8 @@ int legoev3_fiq_ehrpwm_prepare(struct snd_pcm_substream *substream,
 	data->period_elapsed		= period_elapsed;
 	data->period_elapsed_data	= context;
 	data->period_elapsed_flag	= 0;
+	data->ramp_step                 = 0;
+	data->ramp_value                = 0;
 
 	local_fiq_enable();
 
@@ -688,23 +731,48 @@ int legoev3_fiq_ehrpwm_prepare(struct snd_pcm_substream *substream,
 }
 EXPORT_SYMBOL_GPL(legoev3_fiq_ehrpwm_prepare);
 
-unsigned legoev3_fiq_ehrpwm_get_playback_ptr(void)
+void legoev3_fiq_ehrpwm_ramp(struct snd_pcm_substream *substream,
+                             int direction, unsigned ramp_ms)
 {
-	unsigned ptr;
+	struct legoev3_fiq_ehrpwm_data *data;
+	int ramp_samples = substream->runtime->rate * ramp_ms / 1000;
+	if (ramp_samples < 2)
+		return;
+
+	if (!legoev3_fiq_data)
+		return;
+
+	if (direction==0)
+		return;
+
+	data = &legoev3_fiq_data->ehrpwm_data;
 
 	local_fiq_disable();
-	ptr = legoev3_fiq_data->ehrpwm_data.playback_ptr;
-	local_fiq_enable();
 
-	return ptr;
+	if (direction > 0)
+	{ // ramp up
+		data->ramp_step  = 0x8000 / ramp_samples;
+		data->ramp_value = 1;
+	}
+	else
+	{ // ramp down
+		data->ramp_step  = 0x8000 / -ramp_samples;
+		data->ramp_value = 0x8000;
+	}
+
+	local_fiq_enable();
+}
+EXPORT_SYMBOL_GPL(legoev3_fiq_ehrpwm_ramp);
+
+unsigned legoev3_fiq_ehrpwm_get_playback_ptr(void)
+{
+	return legoev3_fiq_data->ehrpwm_data.playback_ptr;
 }
 EXPORT_SYMBOL_GPL(legoev3_fiq_ehrpwm_get_playback_ptr);
 
 void legoev3_fiq_ehrpwm_set_volume(int volume)
 {
-	local_fiq_disable();
 	legoev3_fiq_data->ehrpwm_data.volume = volume;
-	local_fiq_enable();
 }
 EXPORT_SYMBOL_GPL(legoev3_fiq_ehrpwm_set_volume);
 
