@@ -120,26 +120,36 @@ static ssize_t msensor_show_port_name(struct device *dev,
 	return snprintf(buf, MSENSOR_PORT_NAME_SIZE, "%s\n", ms->port_name);
 }
 
-static ssize_t msensor_show_mode(struct device *dev,
-				 struct device_attribute *attr,
-				 char *buf)
+static ssize_t msensor_show_modes(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
 {
 	struct msensor_device *ms = to_msensor_device(dev);
 	int i;
 	unsigned count = 0;
-	int mode = ms->get_mode(ms->context);
 
 	for (i = 0; i < ms->num_modes; i++) {
-		if (i == mode)
-			count += sprintf(buf + count, "[");
 		count += sprintf(buf + count, "%s", ms->mode_info[i].name);
-		if (i == mode)
-			count += sprintf(buf + count, "]");
 		count += sprintf(buf + count, "%c", ' ');
 	}
 	if (count == 0)
 		return -ENXIO;
 	buf[count - 1] = '\n';
+
+	return count;
+}
+
+static ssize_t msensor_show_mode(struct device *dev,
+				 struct device_attribute *attr,
+				 char *buf)
+{
+	struct msensor_device *ms = to_msensor_device(dev);
+	unsigned count = 0;
+
+	count += sprintf(buf, "%s\n",
+			 ms->mode_info[ms->get_mode(ms->context)].name);
+	if (count == 0)
+		return -ENXIO;
 
 	return count;
 }
@@ -258,7 +268,8 @@ static ssize_t msensor_show_value(struct device *dev,
 	int mode = ms->get_mode(ms->context);
 	struct msensor_mode_info *mode_info = &ms->mode_info[mode];
 	long int value;
-	int index;
+	int index, dp;
+	int dp_factor = 1;
 
 	if (strlen(attr->attr.name) < 6)
 		return -ENXIO;
@@ -296,7 +307,11 @@ static ssize_t msensor_show_value(struct device *dev,
 		return -ENXIO;
 	}
 
-	value = (value - mode_info->raw_min)
+	dp = mode_info->decimals;
+	while (dp--)
+		dp_factor *= 10;
+
+	value = (value - mode_info->raw_min) * dp_factor
 		* (mode_info->si_max - mode_info->si_min)
 		/ (mode_info->raw_max - mode_info->raw_min)
 		+ mode_info->si_min;
@@ -434,6 +449,7 @@ static ssize_t msensor_write_bin_data(struct file *file ,struct kobject *kobj,
 static struct device_attribute msensor_device_attrs[] = {
 	__ATTR(type_id, S_IRUGO, msensor_show_type_id, NULL),
 	__ATTR(port_name, S_IRUGO, msensor_show_port_name, NULL),
+	__ATTR(modes, S_IRUGO | S_IWUGO, msensor_show_modes, NULL),
 	__ATTR(mode, S_IRUGO | S_IWUGO, msensor_show_mode, msensor_store_mode),
 	__ATTR(units, S_IRUGO, msensor_show_units, NULL),
 	__ATTR(dp, S_IRUGO, msensor_show_dp, NULL),
@@ -544,6 +560,26 @@ void unregister_msensor(struct msensor_device *ms)
 }
 EXPORT_SYMBOL_GPL(unregister_msensor);
 
+static int msensor_dev_uevent(struct device *dev, struct kobj_uevent_env *env)
+{
+	struct msensor_device *ms = to_msensor_device(dev);
+	int ret;
+
+	ret = add_uevent_var(env, "TYPEID=%d", ms->type_id);
+	if (ret) {
+		dev_err(dev, "failed to add uevent TYPEID\n");
+		return ret;
+	}
+
+	add_uevent_var(env, "PORT=%s", ms->port_name);
+	if (ret) {
+		dev_err(dev, "failed to add uevent PORT\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static char *msensor_devnode(struct device *dev, umode_t *mode)
 {
 	return kasprintf(GFP_KERNEL, "msensor/%s", dev_name(dev));
@@ -554,6 +590,7 @@ struct class msensor_class = {
 	.owner		= THIS_MODULE,
 	.dev_attrs	= msensor_device_attrs,
 	.dev_bin_attrs	= msensor_device_bin_attrs,
+	.dev_uevent	= msensor_dev_uevent,
 	.devnode	= msensor_devnode,
 };
 EXPORT_SYMBOL_GPL(msensor_class);

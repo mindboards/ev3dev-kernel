@@ -43,7 +43,6 @@
 #define LEGOEV3_UART_MODE_NAME_SIZE	11
 
 #define LEGOEV3_UART_SEND_ACK_DELAY		10 /* msec */
-#define LEGOEV3_UART_SET_BITRATE_DELAY		10 /* msec */
 #define LEGOEV3_UART_DATA_KEEP_ALIVE_TIMEOUT	100 /* msec */
 
 #define LEGOEV3_UART_DEVICE_TYPE_NAME_SIZE	30
@@ -132,6 +131,7 @@ enum legoev3_uart_info_flags {
  * @num_modes: The number of modes that the sensor has. (1-8)
  * @num_view_modes: Number of modes that can be used for data logging. (1-8)
  * @mode: The current mode.
+ * @new_mode: The mode requested by set_mode.
  * @raw_min: Min/max values are sent as float data types. This holds the value
  * 	until we read the number of decimal places needed to convert this
  * 	value to an integer.
@@ -140,6 +140,7 @@ enum legoev3_uart_info_flags {
  * @pct_max: See raw_min.
  * @si_min: See raw_min.
  * @si_max: See raw_min.
+ * @new_baud_rate: New baud rate that will be set with legoev3_uart_change_bitrate
  * @info_flags: Flags indicating what information has already been read
  * 	from the sensor.
  * @buffer: Byte array to store received data in between receive_buf interrupts.
@@ -158,11 +159,13 @@ struct legoev3_uart_port_data {
 	struct legoev3_port_device *in_port;
 	struct msensor_device ms;
 	struct delayed_work send_ack_work;
-	struct delayed_work change_bitrate_work;
+	struct work_struct change_bitrate_work;
 	struct hrtimer keep_alive_timer;
 	struct tasklet_struct keep_alive_tasklet;
+	struct completion set_mode_completion;
 	struct msensor_mode_info mode_info[MSENSOR_MODE_MAX + 1];
 	u8 mode;
+	u8 new_mode;
 	u32 raw_min;
 	u32 raw_max;
 	u32 pct_min;
@@ -260,6 +263,9 @@ int legoev3_uart_set_mode(void *context, const u8 mode)
 	if (mode >= port->ms.num_modes)
 		return -EINVAL;
 
+	if (!completion_done(&port->set_mode_completion))
+		return -EBUSY;
+
 	data[0] = legoev3_uart_set_msg_hdr(LEGOEV3_UART_MSG_TYPE_CMD,
 					   data_size - 2,
 					   LEGOEV3_UART_CMD_SELECT);
@@ -270,6 +276,13 @@ int legoev3_uart_set_mode(void *context, const u8 mode)
 	ret = tty->ops->write(tty, data, data_size);
 	if (ret < 0)
 		return ret;
+
+	port->new_mode = mode;
+	INIT_COMPLETION(port->set_mode_completion);
+	ret = wait_for_completion_timeout(&port->set_mode_completion,
+					  msecs_to_jiffies(300));
+	if (!ret)
+		return -ETIMEDOUT;
 
 	return 0;
 }
@@ -378,15 +391,13 @@ static void legoev3_uart_send_ack(struct work_struct *work)
 			port->last_err);
 
 	legoev3_uart_write_byte(port->tty, LEGOEV3_UART_SYS_ACK);
-	schedule_delayed_work(&port->change_bitrate_work,
-	                      msecs_to_jiffies(LEGOEV3_UART_SET_BITRATE_DELAY));
+	schedule_work(&port->change_bitrate_work);
 }
 
 static void legoev3_uart_change_bitrate(struct work_struct *work)
 {
-	struct delayed_work *dwork = to_delayed_work(work);
 	struct legoev3_uart_port_data *port =
-		container_of(dwork, struct legoev3_uart_port_data,
+		container_of(work, struct legoev3_uart_port_data,
 			     change_bitrate_work);
 	struct ktermios old_termios = *port->tty->termios;
 
@@ -450,11 +461,12 @@ static int legoev3_uart_open(struct tty_struct *tty)
 	port->ms.set_mode = legoev3_uart_set_mode;
 	port->ms.write_data = legoev3_uart_write_data;
 	INIT_DELAYED_WORK(&port->send_ack_work, legoev3_uart_send_ack);
-	INIT_DELAYED_WORK(&port->change_bitrate_work, legoev3_uart_change_bitrate);
+	INIT_WORK(&port->change_bitrate_work, legoev3_uart_change_bitrate);
 	hrtimer_init(&port->keep_alive_timer, HRTIMER_BASE_MONOTONIC, HRTIMER_MODE_REL);
 	port->keep_alive_timer.function = legoev3_uart_keep_alive_timer_callback;
 	tasklet_init(&port->keep_alive_tasklet, legoev3_uart_send_keep_alive,
 		     (unsigned long)tty);
+	init_completion(&port->set_mode_completion);
 	tty->disc_data = port;
 
 	/* set baud rate and other port settings */
@@ -509,9 +521,11 @@ static void legoev3_uart_close(struct tty_struct *tty)
 	if (port->in_port)
 		put_device(&port->in_port->dev);
 	cancel_delayed_work_sync(&port->send_ack_work);
-	cancel_delayed_work_sync(&port->change_bitrate_work);
+	cancel_work_sync(&port->change_bitrate_work);
 	hrtimer_cancel(&port->keep_alive_timer);
 	tasklet_kill(&port->keep_alive_tasklet);
+	if (!completion_done(&port->set_mode_completion))
+		complete(&port->set_mode_completion);
 	tty->disc_data = NULL;
 	kfree(port);
 }
@@ -839,23 +853,16 @@ static void legoev3_uart_receive_buf(struct tty_struct *tty,
 				}
 				switch (port->buffer[3]) {
 				case LEGOEV3_UART_DATA_8:
-					port->mode_info[mode].data_type =
-					(port->mode_info[mode].si_min < 0) ?
-						MSENSOR_DATA_S8 : MSENSOR_DATA_U8;
+					port->mode_info[mode].data_type = MSENSOR_DATA_S8;
 					break;
 				case LEGOEV3_UART_DATA_16:
-					port->mode_info[mode].data_type =
-					(port->mode_info[mode].si_min < 0) ?
-						MSENSOR_DATA_S16 : MSENSOR_DATA_U16;
+					port->mode_info[mode].data_type = MSENSOR_DATA_S16;
 					break;
 				case LEGOEV3_UART_DATA_32:
-					port->mode_info[mode].data_type =
-					(port->mode_info[mode].si_min < 0) ?
-						MSENSOR_DATA_S32 : MSENSOR_DATA_U32;
+					port->mode_info[mode].data_type = MSENSOR_DATA_S32;
 					break;
 				case LEGOEV3_UART_DATA_FLOAT:
-					port->mode_info[mode].data_type =
-						MSENSOR_DATA_FLOAT;
+					port->mode_info[mode].data_type = MSENSOR_DATA_FLOAT;
 					break;
 				default:
 					port->last_err = "Invalid data type.";
@@ -907,7 +914,17 @@ static void legoev3_uart_receive_buf(struct tty_struct *tty,
 				port->last_err = "Invalid mode received.";
 				goto err_invalid_state;
 			}
-			port->mode = mode;
+			if (mode != port->mode) {
+				if (mode == port->new_mode)
+					port->mode = mode;
+				else {
+					port->last_err = "Unexpected mode.";
+					goto err_invalid_state;
+				}
+			}
+			if (!completion_done(&port->set_mode_completion)
+			    && mode == port->new_mode)
+				complete(&port->set_mode_completion);
 			memcpy(port->mode_info[mode].raw_data,
 			       port->buffer + 1, msg_size - 2);
 			port->data_rec = 1;
@@ -933,8 +950,7 @@ err_split_sync_checksum:
 err_invalid_state:
 	port->synced = 0;
 	port->new_baud_rate = LEGOEV3_UART_SPEED_MIN;
-	schedule_delayed_work(&port->change_bitrate_work,
-	                      msecs_to_jiffies(LEGOEV3_UART_SET_BITRATE_DELAY));
+	schedule_work(&port->change_bitrate_work);
 }
 
 static void legoev3_uart_write_wakeup(struct tty_struct *tty)

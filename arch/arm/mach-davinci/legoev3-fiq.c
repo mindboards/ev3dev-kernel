@@ -549,6 +549,7 @@ int legoev3_fiq_request_port(enum ev3_input_port_id port_id, int sda_pin,
 	}
 
 	data->transfer_state = TRANSFER_IDLE;
+	data->clock_state = 1;
 	legoev3_fiq_data->port_req_flags |= BIT(port_id);
 
 	return 0;
@@ -813,7 +814,7 @@ static int __devinit legoev3_fiq_probe(struct platform_device *pdev)
 
 	ret = gpio_request_one(pdata->status_gpio, GPIOF_INIT_LOW, "fiq status");
 	if (ret < 0) {
-		dev_err(&legoev3_fiq_data->pdev->dev,
+		dev_err(&pdev->dev,
 			"Unable to request GPIO %d, error %d\n",
 			pdata->status_gpio, ret);
 		return ret;
@@ -822,7 +823,7 @@ static int __devinit legoev3_fiq_probe(struct platform_device *pdev)
 
 	ret = gpio_to_irq(pdata->status_gpio);
 	if (ret < 0) {
-		dev_err(&legoev3_fiq_data->pdev->dev,
+		dev_err(&pdev->dev,
 			"Unable to get irq number for GPIO %d, error %d\n",
 			pdata->status_gpio, ret);
 		goto err_gpio_to_irq;
